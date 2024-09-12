@@ -16,7 +16,7 @@ mp = {}
 async def load_nlp_model():
     global nlp
     global engine
-    #stanza.download('ar')  # Downloads the Arabic model
+    stanza.download('ar')  # Downloads the Arabic model
     nlp = stanza.Pipeline('ar',download_method=None)  # Sets up the Stanza pipeline
     engine = DialogManager() 
     
