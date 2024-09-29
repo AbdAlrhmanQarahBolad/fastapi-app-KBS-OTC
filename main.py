@@ -4,21 +4,22 @@ import stanza
 from experta import *
 import re
 from fastapi.responses import JSONResponse
+from typing import Dict, Any
 
 app = FastAPI()
 
 # Declare global variable for the Stanza pipeline
 nlp = None
-engine = None
+#engine = None
 mp = {}
 # Download Stanza Arabic model and set up pipeline on startup
 @app.on_event("startup")
 async def load_nlp_model():
     global nlp
-    global engine
-    stanza.download('ar')  # Downloads the Arabic model
+    #global engine
+    #stanza.download('ar')  # Downloads the Arabic model
     nlp = stanza.Pipeline('ar',download_method=None)  # Sets up the Stanza pipeline
-    engine = DialogManager() 
+    
     
 
 
@@ -27,23 +28,28 @@ def root():
     return {"data":mp}
 
 
-@app.get("/{sen}")
-def runEngine(sen: str):
-    #engine.reset()
+@app.post("/{sen}")
+def runEngine(sen: str,data: Dict[Any, Any]):
+    
+    engine = DialogManager() 
 
     arr=pipline(sen)
     for k, v in arr.items():
-        mp.update({k:v})
-    declareFacts(mp)
+        data.update({k:v})
+    engine.declareFacts(data)
     engine.run()
-    return JSONResponse(status_code=status.HTTP_200_OK, content={"Message":engine.sentence,"EndFlag":engine.endFlag})
+    if (engine.sentence ==""):
+        engine.sentence ="خرجنا من نطاق الادوية المتاحة من دون وصفة , يمكنك زيارة طبيب "
+        engine.endFlag = True
+        
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"Message":engine.sentence,"EndFlag":engine.endFlag,'data':data})
 
 @app.post("/reset/")
 def resetEngine():
-    global mp 
-    mp ={}
-    engine.reset()
-    engine.run()
+    #global mp 
+    #mp ={}
+    #engine.reset()
+    #engine.run()
     return JSONResponse(status_code=status.HTTP_200_OK, content={"Message":"The engine has been reset successfully"})
 
 
@@ -79,9 +85,9 @@ def pipline(sentence):
             'صداع','صداع نصفي','سعال ديكي','قيئ',
             'سعال رطب','ضيق تنفس','الإسهال غير مائي','الإسهال مائي','الإسهال دهني',
             'سعال جاف','سيلان','احتقان','احتقان ليلي','احتقان أنفي','سيلان أنف','رشح','عطاس','العطاس',
-            'سعال الديكي','قيء','قيء شديد','السيلان','احتقان انفي']
+            'سعال الديكي','قيء','قيء شديد','السيلان','احتقان انفي','احتقان أنفى','احتقان أنف','احتقان الانفي']
     lemmas_3word = ['إسهال غير مائي','الإسهال غير مائي']
-    lemmas_2word = ['قيء شديد','احتقان انفي','سعال الديكي','الإسهال مائي','الإسهال دهني','إسهال مائي','إسهال دهني','ألم بطن','رائحة كريه','إقياء شديد','حرقة مريء','احتقان ليلي','احتقان أنفي','سيلان أنف','عسر هضم','صداع قفوي','سعال جاف','صداع جبهي','صداع نصفي','سعال ديكي','سعال رطب','ضيق تنفس',]
+    lemmas_2word = ['احتقان الانفي','احتقان أنف','احتقان أنفى','قيء شديد','احتقان انفي','سعال الديكي','الإسهال مائي','الإسهال دهني','إسهال مائي','إسهال دهني','ألم بطن','رائحة كريه','إقياء شديد','حرقة مريء','احتقان ليلي','احتقان أنفي','سيلان أنف','عسر هضم','صداع قفوي','سعال جاف','صداع جبهي','صداع نصفي','سعال ديكي','سعال رطب','ضيق تنفس',]
     for sentence in split_sentences:
         #####lemma_sentence = convert_to_lemma_sentence_without_diacritics(sentence)
         lemma_sentence = sentence
@@ -288,6 +294,8 @@ class قيء(Fact):
     pass
 class قيء_شديد(Fact):
     pass
+class إقياء_شديد(Fact):
+    pass
 class غثيان(Fact):
     pass
 class تشنج(Fact):
@@ -300,7 +308,13 @@ class احتقان(Fact):
     pass
 class احتقان_أنفي(Fact):
     pass
+class احتقان_أنف(Fact):
+    pass
 class احتقان_انفي(Fact):
+    pass
+class احتقان_أنفى(Fact):
+    pass
+class احتقان_الانفي(Fact):
     pass
 class احتقان_ليلي(Fact):
     pass
@@ -328,11 +342,9 @@ class صداع_نصفي(Fact):
     pass
 class Intent(Fact):
     pass
+class empty(Fact):
+    pass
 
-def declareFacts(exist):
-  for elem in exist:
-    className=elem.replace(" ", "_")
-    engine.declare(create_instance(className,exist[elem]))
 
 # Define the Knowledge Base
 class DialogManager(KnowledgeEngine):
@@ -340,8 +352,14 @@ class DialogManager(KnowledgeEngine):
     endFlag = False
     @DefFacts()
     def initial_facts(self):
-        yield Intent(intent='Unknown')
+        yield empty(True)
 
+    def declareFacts(self,exist):
+        for elem in exist:
+            className=elem.replace(" ", "_")
+            self.declare(create_instance(className,exist[elem]))
+        #if not bool(exist) :
+        #   self.declare(empty(True))
 ###################
 
     @Rule(إسهال(True),
@@ -470,7 +488,7 @@ class DialogManager(KnowledgeEngine):
         self.arr=pipline(user_response)
         declareFacts(self.arr)
 
-    @Rule(OR(الإسهال_دهني(True),إسهال_دهني(True) ), NOT(ألم_بطن()) )
+    @Rule(OR(الإسهال_دهني(True),إسهال_دهني(True) ), NOT(رائحة_كريه()) )
     def Diarrheamedicen6(self):
         self.sentence = "هل تعاني من رائحة كريهة مع الاسهال ؟ , اجب اجابة كاملة "
         self.endFlag = False
@@ -478,7 +496,7 @@ class DialogManager(KnowledgeEngine):
         user_response = input("هل تعاني من رائحة كريهة مع الاسهال ؟ , اجب اجابة كاملة ")
         self.arr=pipline(user_response)
         declareFacts(self.arr)
-    @Rule(OR(الإسهال_دهني(True),إسهال_دهني(True) ), NOT(رائحة_كريه()) )
+    @Rule(OR(الإسهال_دهني(True),إسهال_دهني(True) ), NOT(ألم_بطن()) )
     def Diarrheamedicen7(self):
         self.sentence = "هل تعاني من ألم بطن مع الاسهال ؟ , اجب اجابة كاملة "
         self.endFlag = False
@@ -520,7 +538,14 @@ class DialogManager(KnowledgeEngine):
         self.halt()
 
 #اقياء وغثيان
-    @Rule(غثيان(True), AND(NOT(إقياء()),NOT(قيء()),NOT(قيئ())))
+    @Rule(OR(إقياء(True),قيء(True),قيئ(True)),NOT(إقياء_شديد()),NOT(قيء_شديد()))
+    def ask_neaseaState01(self):
+        self.sentence = "هل تعاني من  اقياء شديد ام لا ؟ , اجب اجابة كاملة "
+        self.endFlag = False
+        return
+
+
+    @Rule(غثيان(True), NOT(إقياء()),NOT(قيء()),NOT(قيئ()),NOT(إقياء_شديد()),NOT(قيء_شديد()))
     def ask_neaseaState1(self):
         self.sentence = "هل تعاني من  (اقياء ام اقياء شديد ام لا تعاني ؟ , اجب اجابة كاملة "
         self.endFlag = False
@@ -530,7 +555,7 @@ class DialogManager(KnowledgeEngine):
         declareFacts(self.arr)
     @Rule(OR(إقياء(True),قيء(True),قيئ(True)), NOT(غثيان()))
     def ask_neaseaState2(self):
-        self.sentence = "هل تعاني من غثيان مع الاقياء ؟ , اجب اجابة كاملة "
+        self.sentence = "هل تعاني من غثيان ؟ , اجب اجابة كاملة"
         self.endFlag = False
         return
         user_response = input("هل تعاني من غثيان مع الاقياء ؟ , اجب اجابة كاملة ")
@@ -555,10 +580,10 @@ class DialogManager(KnowledgeEngine):
 
     @Rule(غثيان(True),OR(إقياء(False),قيء(False),قيئ(False)),تشنج(False) ,salience=1000)
     def neaseamedicen1(self):
-        self.sentence = "الادوية المناسبة لحالتك هي دي قوميت او اونفران"
+        self.sentence = "الادوية المناسبة لحالتك هي دي فوميت او اونفران"
         self.endFlag = True
         return
-        print("الادوية المناسبة لحالتك هي دي قوميت او اونفران")
+        print("الادوية المناسبة لحالتك هي دي فوميت او اونفران")
         self.halt()
 
     @Rule(AND(OR(OR(إقياء(True),قيء(True),قيئ(True)), غثيان(True))), ألم_بطن(True), تشنج(True),salience=1000 )
@@ -571,26 +596,26 @@ class DialogManager(KnowledgeEngine):
 
 
 
-    @Rule(قيء_شديد(True), غثيان(True),salience=1000)
+    @Rule(OR(قيء_شديد(True),إقياء_شديد(True)), غثيان(True),salience=1000)
     def neaseamedicen3(self):
-        self.sentence = "الادوية المناسبه لحالتك هي حب مص مثل كاميترون او نوفوميت او حقن مثل فومي كايند او اندانسترون"
+        self.sentence = "الادوية المناسبه لحالتك هي حب مص مثل كاميترون او فومي سيت او حقن مثل فومي كايند او اندانسترون"
         self.endFlag = True
         return
         print(":الادوية المناسبه لحالتك هي")
-        print(" حب مص : كاميترون او نوفوميت")
+        print(" حب مص : كاميترون او فومي سيت")
         print("حقن : فومي كايند او اندانسترون")
         self.halt()
 
 #حرقة
     @Rule(حرقة(True),salience=1000 )
     def Heartburnmedicen1(self):
-        self.sentence = "الادوية المناسبه لحالتك هي حب مص مثل ريني فيرس او رينوفول او حب بلع مثل ايزوستوم او لانسوبرازول او بنتا او اذا كنت تتناول كلوميد فالدواء هو دبكسا لانسوبرازول او بنتا او بانتوبرال "
+        self.sentence = "الادوية المناسبه لحالتك هي حب مص مثل ريني فيرس او رينوفول او حب بلع مثل ايزوستوم او لانسوبرازول او بنتا او اذا كنت تتناول كلوبيد غريل فالدواء هو ديسكا لانسوبرازول او بنتا او بانتوبرال "
         self.endFlag = True
         return
         print(":الادوية المناسبه لحالتك هي")
         print("حب مص : ريني فيرس او رينوفول")
         print(" حب بلع : ايزوستوم او لانسبورازول او بنتا")
-        print("اذا كنت تتناول كلوميد فالدواء هو : دبكسا لانسوبرازول او بنتا او بانتوبرال")
+        print("اذا كنت تتناول كلوبيد غريل غريل فالدواء هو : ديسكا لانسوبرازول او بنتا او بانتوبرال")
         self.halt()
 
 #عسر هضم تجشؤ
@@ -675,7 +700,7 @@ class DialogManager(KnowledgeEngine):
         declareFacts(self.arr)
 
 
-    @Rule(احتقان(True),NOT(احتقان_ليلي()),NOT(احتقان_أنفي()),NOT(احتقان_انفي()))
+    @Rule(احتقان(True),NOT(احتقان_ليلي()),NOT(احتقان_أنفي()),NOT(احتقان_انفي()),NOT(احتقان_أنفى()),NOT(احتقان_أنف()),NOT(احتقان_الانفي()))
     def ask_s3(self):
         self.sentence ="هل تعاني من احتقان انفي ام احتقان ليلي  ؟ , اجب اجابة كاملة "
         self.endFlag = False
@@ -685,7 +710,7 @@ class DialogManager(KnowledgeEngine):
         declareFacts(self.arr)
 
 
-    @Rule(OR(احتقان_أنفي(True),احتقان_انفي(True)),NOT(زاكم()))
+    @Rule(OR(احتقان_أنفي(True),احتقان_انفي(True),احتقان_أنفى(True),احتقان_أنف(True),احتقان_الانفي(True)),NOT(زاكم()))
     def ask_s2(self):
         self.sentence ="هل تعاني من الزكام ؟ , اجب اجابة كاملة "
         self.endFlag = False
@@ -694,7 +719,7 @@ class DialogManager(KnowledgeEngine):
         self.arr=pipline(user_response)
         declareFacts(self.arr)
 
-    @Rule(زاكم(True),NOT(احتقان_أنفي()),NOT(احتقان_انفي()))
+    @Rule(زاكم(True),NOT(احتقان_أنفي()),NOT(احتقان_انفي()),NOT(احتقان_أنفى()),NOT(احتقان_أنف()),NOT(احتقان_الانفي()))
     def ask_s4(self):
         self.sentence ="هل تعاني من ٱحتقان الأنفي ؟ , اجب اجابة كاملة "
         self.endFlag = False
@@ -762,7 +787,7 @@ class DialogManager(KnowledgeEngine):
         print("الدواء المناسب لحالتك هو كلاريتين او زيتريزين او ليفوندا")
         self.halt()
 
-    @Rule( OR(احتقان_أنفي(True),احتقان_انفي(True))
+    @Rule( OR(احتقان_أنفي(True),احتقان_انفي(True),احتقان_أنفى(True),احتقان_أنف(True),احتقان_الانفي(True))
     ,
           زاكم(True),salience=1000)
     def m2(self):
@@ -774,7 +799,7 @@ class DialogManager(KnowledgeEngine):
 
     @Rule( OR(سيلان(True),السيلان(True))
     ,
-          احتقان_ليلي(True),salience=1000)
+        احتقان_ليلي(True),salience=1000)
     def m3(self):
         self.sentence ="الدواء المناسب لحالتك هو تولين اكسترا او رينومود او فلوريكس"
         self.endFlag = True
@@ -839,30 +864,5 @@ class DialogManager(KnowledgeEngine):
         print("الدواء المناسب لحالتك هو يوني اكسدرين او بارادرين شقيقة")
         self.halt()
 
-    @Rule(salience=-1)
-    def m11(self):
-        self.sentence ="خرجنا من نطاق الادوية المتاحة من دون وصفة , يمكنك زيارة طبيب "
-        self.endFlag = True
-        return
-        print("خرجنا من نطاق الادوية المتاحة من دون وصفة , يمكنك زيارة طبيب ")
-        self.halt()
-
-"""
-   
 
 
-engine.reset()
-
-sen=input(" اخبرني من ماذا تعاني ؟ ");
-#sen="أعاني من الرشح و العطاس و الاحتقان الانف و الزكام و السيلان و الاحتقان الليلي و السعال و السعال الجاف و السعال الرطب و ضيق تنفس و السعال الديكي و الصداع القفوي و الصداع الجبهي و الصداع النصفي و الاسهال المائي و ألم بطن و الرائحة الكريهة و الاسهال الدهني و الاسهال الغير المائي و الامساك و حرقة و عسر هضم و تجشؤ و الاقياء و الغثيان و التشنج و اقياء شديد"
-#sen="اعاني من الاقياء"
-#sen="اعاني من تجشؤ و عسر الهضم"
-#pipline(sen)
-
-
-engine.arr=pipline(sen)
-print(engine.arr)
-declareFacts(engine.arr)
-
-engine.run()
-"""
